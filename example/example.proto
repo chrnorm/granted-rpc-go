@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+option go_package = "./example";
+
+package example;
+
+// Some example docs about our service.
+service EchoService {
+    // Says hello.
+    rpc SayHello(SayHelloRequest) returns (SayHelloResponse) {}
+}
+
+// Some documentation about our request type.
+message SayHelloRequest {
+    string greeting = 1;
+}
+
+// Some documentation about our response type.
+message SayHelloResponse {
+    string reply = 1;
+}
