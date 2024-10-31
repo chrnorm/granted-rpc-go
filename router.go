@@ -51,10 +51,11 @@ type messageHandler interface {
 	SendMessage(ctx context.Context, input string) (string, error)
 }
 
-type routerMessage struct {
+type Message struct {
 	Procedure string          `json:"procedure"`
 	Request   json.RawMessage `json:"request,omitempty"`
 	Response  json.RawMessage `json:"response,omitempty"`
+	Error     *RPCError       `json:"error,omitempty"`
 }
 
 func NewRouter() *Router {
@@ -73,23 +74,23 @@ func (r *Router) Register(operation string, inputType any, outputType any, handl
 }
 
 // HandleMessage processes an incoming message, calling the registered handler
-func (r *Router) HandleMessage(ctx context.Context, input string) (string, error) {
-	var msg routerMessage
+func (r *Router) HandleMessage(ctx context.Context, input string) string {
+	var msg Message
 	err := json.Unmarshal([]byte(input), &msg)
 	if err != nil {
-		return "", fmt.Errorf("failed to unmarshal message: %w", err)
+		return errorMessage(fmt.Errorf("failed to unmarshal message: %w", err))
 	}
 
 	// Look up handler for the operation
 	fn, ok := r.operationFuncs[msg.Procedure]
 	if !ok {
-		return "", fmt.Errorf("no handler found for operation %s", msg.Procedure)
+		return errorMessage(fmt.Errorf("no handler found for operation %s", msg.Procedure))
 	}
 
 	// Get the input type
 	inputType, ok := r.inputTypes[msg.Procedure]
 	if !ok {
-		return "", fmt.Errorf("no input type found for operation %s", msg.Procedure)
+		return errorMessage(fmt.Errorf("no input type found for operation %s", msg.Procedure))
 	}
 
 	// Create a new instance of the input type
@@ -98,7 +99,7 @@ func (r *Router) HandleMessage(ctx context.Context, input string) (string, error
 	// Unmarshal the request into the input type
 	err = protojson.Unmarshal(msg.Request, inputValue.(proto.Message))
 	if err != nil {
-		return "", fmt.Errorf("failed to unmarshal request: %w", err)
+		return errorMessage(fmt.Errorf("failed to unmarshal request: %w", err))
 	}
 
 	// Call the handler function
@@ -110,7 +111,7 @@ func (r *Router) HandleMessage(ctx context.Context, input string) (string, error
 
 	// Check for error
 	if !results[1].IsNil() {
-		return "", results[1].Interface().(error)
+		return errorMessage(results[1].Interface().(error))
 	}
 
 	// Get response
@@ -119,11 +120,11 @@ func (r *Router) HandleMessage(ctx context.Context, input string) (string, error
 	// Marshal response to JSON
 	responseBytes, err := protojson.Marshal(response)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal response: %w", err)
+		return errorMessage(fmt.Errorf("failed to marshal response: %w", err))
 	}
 
 	// Create response message
-	outMsg := routerMessage{
+	outMsg := Message{
 		Procedure: msg.Procedure,
 		Response:  responseBytes,
 	}
@@ -131,8 +132,28 @@ func (r *Router) HandleMessage(ctx context.Context, input string) (string, error
 	// Marshal full response
 	out, err := json.Marshal(outMsg)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal response message: %w", err)
+		return errorMessage(fmt.Errorf("failed to marshal response message: %w", err))
 	}
 
-	return string(out), nil
+	return string(out)
+}
+
+func errorMessage(err error) string {
+	msg := "<unhandled error: this means that the error sent was nil>"
+	if err != nil {
+		msg = err.Error()
+	}
+
+	m := Message{
+		Error: &RPCError{
+			Message: msg,
+		},
+	}
+
+	messageBytes, marshalErr := json.Marshal(m)
+	if marshalErr != nil {
+		panic(fmt.Sprintf("could not marshal: %s", marshalErr))
+	}
+
+	return string(messageBytes)
 }

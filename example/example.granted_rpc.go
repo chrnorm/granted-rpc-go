@@ -16,10 +16,6 @@ const (
 	EchoServiceSayHelloProcedure = "/example.EchoService/SayHello"
 )
 
-type messageHandler interface {
-	SendMessage(ctx context.Context, input string) (string, error)
-}
-
 // Some example docs about our service.
 type EchoServiceHandler interface {
 	// Says hello.
@@ -28,11 +24,11 @@ type EchoServiceHandler interface {
 
 // Some example docs about our service.
 type EchoServiceClient struct {
-	h messageHandler
+	t grantedrpc.Transport
 }
 
-func NewEchoServiceClient(h messageHandler) *EchoServiceClient {
-	return &EchoServiceClient{h: h}
+func NewEchoServiceClient(t grantedrpc.Transport) *EchoServiceClient {
+	return &EchoServiceClient{t: t}
 }
 
 func RegisterEchoService(r *grantedrpc.Router, svc EchoServiceHandler) {
@@ -46,10 +42,7 @@ func (c *EchoServiceClient) SayHello(ctx context.Context, req *SayHelloRequest) 
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	msg := struct {
-		Procedure string          `json:"procedure"`
-		Request   json.RawMessage `json:"request"`
-	}{
+	msg := grantedrpc.Message{
 		Procedure: EchoServiceSayHelloProcedure,
 		Request:   reqJson,
 	}
@@ -59,26 +52,27 @@ func (c *EchoServiceClient) SayHello(ctx context.Context, req *SayHelloRequest) 
 		return nil, fmt.Errorf("failed to marshal wrapper: %w", err)
 	}
 
-	respJson, err := c.h.SendMessage(ctx, string(inputJson))
+	respJson, err := c.t.SendMessage(ctx, string(inputJson))
 	if err != nil {
 		return nil, err
 	}
 
-	var respWrapper struct {
-		Procedure string          `json:"procedure"`
-		Response  json.RawMessage `json:"response"`
-	}
+	var respMsg grantedrpc.Message
 
-	if err := json.Unmarshal([]byte(respJson), &respWrapper); err != nil {
+	if err := json.Unmarshal([]byte(respJson), &respMsg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response wrapper: %w", err)
 	}
 
-	if respWrapper.Procedure != EchoServiceSayHelloProcedure {
-		return nil, fmt.Errorf("mismatched procedure in response: got %s want %s", respWrapper.Procedure, EchoServiceSayHelloProcedure)
+	if respMsg.Error != nil {
+		return nil, respMsg.Error
+	}
+
+	if respMsg.Procedure != EchoServiceSayHelloProcedure {
+		return nil, fmt.Errorf("mismatched procedure in response: got %s want %s", respMsg.Procedure, EchoServiceSayHelloProcedure)
 	}
 
 	resp := new(SayHelloResponse)
-	if err := protojson.Unmarshal(respWrapper.Response, resp); err != nil {
+	if err := protojson.Unmarshal(respMsg.Response, resp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 

@@ -55,11 +55,6 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) {
 	g.P(")")
 	g.P()
 
-	g.P("type messageHandler interface {")
-	g.P("	SendMessage(ctx context.Context, input string) (string, error)")
-	g.P("}")
-	g.P()
-
 	// Generate code for each service
 	for _, service := range file.Services {
 		genService(g, service)
@@ -88,12 +83,12 @@ func genService(g *protogen.GeneratedFile, service *protogen.Service) {
 		g.P(strings.TrimSuffix(service.Comments.Leading.String(), "\n"))
 	}
 	g.P("type ", serviceName, "Client struct {")
-	g.P("	h messageHandler")
+	g.P("	t grantedrpc.Transport")
 	g.P("}")
 	g.P()
 
-	g.P("func New", serviceName, "Client(h messageHandler) *", serviceName, "Client {")
-	g.P("	return &", serviceName, "Client{h: h}")
+	g.P("func New", serviceName, "Client(t grantedrpc.Transport) *", serviceName, "Client {")
+	g.P("	return &", serviceName, "Client{t: t}")
 	g.P("}")
 	g.P()
 
@@ -128,10 +123,7 @@ func genMethod(g *protogen.GeneratedFile, method *protogen.Method, service *prot
 	g.P("	}")
 	g.P()
 
-	g.P("	msg := struct{")
-	g.P("		Procedure string `json:\"procedure\"`")
-	g.P("		Request json.RawMessage `json:\"request\"`")
-	g.P("	}{")
+	g.P("	msg := grantedrpc.Message{")
 	g.P("		Procedure: ", constName, ",")
 	g.P("		Request: reqJson,")
 	g.P("	}")
@@ -143,30 +135,32 @@ func genMethod(g *protogen.GeneratedFile, method *protogen.Method, service *prot
 	g.P("	}")
 	g.P()
 
-	g.P("	respJson, err := c.h.SendMessage(ctx, string(inputJson))")
+	g.P("	respJson, err := c.t.SendMessage(ctx, string(inputJson))")
 	g.P("	if err != nil {")
 	g.P("		return nil, err")
 	g.P("	}")
 	g.P()
 
-	g.P("	var respWrapper struct{")
-	g.P("		Procedure string `json:\"procedure\"`")
-	g.P("		Response json.RawMessage `json:\"response\"`")
-	g.P("	}")
+	g.P("	var respMsg grantedrpc.Message")
 	g.P()
 
-	g.P("	if err := json.Unmarshal([]byte(respJson), &respWrapper); err != nil {")
+	g.P("	if err := json.Unmarshal([]byte(respJson), &respMsg); err != nil {")
 	g.P("		return nil, fmt.Errorf(\"failed to unmarshal response wrapper: %w\", err)")
 	g.P("	}")
 	g.P()
 
-	g.P("	if respWrapper.Procedure != ", constName, " {")
-	g.P("		return nil, fmt.Errorf(\"mismatched procedure in response: got %s want %s\", respWrapper.Procedure, ", constName, ")")
+	g.P("	if respMsg.Error != nil {")
+	g.P("		return nil, respMsg.Error")
+	g.P("	}")
+	g.P()
+
+	g.P("	if respMsg.Procedure != ", constName, " {")
+	g.P("		return nil, fmt.Errorf(\"mismatched procedure in response: got %s want %s\", respMsg.Procedure, ", constName, ")")
 	g.P("	}")
 	g.P()
 
 	g.P("	resp := new(", method.Output.GoIdent, ")")
-	g.P("	if err := protojson.Unmarshal(respWrapper.Response, resp); err != nil {")
+	g.P("	if err := protojson.Unmarshal(respMsg.Response, resp); err != nil {")
 	g.P("		return nil, fmt.Errorf(\"failed to unmarshal response: %w\", err)")
 	g.P("	}")
 	g.P()

@@ -8,8 +8,3 @@ type RPCError struct {
 func (e *RPCError) Error() string {
 	return e.Message
 }
-
-// ErrorPayload describes a JSON error response.
-type ErrorPayload struct {
-	Error RPCError `json:"error"`
-}
