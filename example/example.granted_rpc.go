@@ -16,10 +16,6 @@ const (
 	EchoServiceSayHelloProcedure = "/example.EchoService/SayHello"
 )
 
-type messageHandler interface {
-	SendMessage(ctx context.Context, input string) (string, error)
-}
-
 // Some example docs about our service.
 type EchoServiceHandler interface {
 	// Says hello.
@@ -28,11 +24,11 @@ type EchoServiceHandler interface {
 
 // Some example docs about our service.
 type EchoServiceClient struct {
-	h messageHandler
+	t grantedrpc.Transport
 }
 
-func NewEchoServiceClient(h messageHandler) *EchoServiceClient {
-	return &EchoServiceClient{h: h}
+func NewEchoServiceClient(t grantedrpc.Transport) *EchoServiceClient {
+	return &EchoServiceClient{t: t}
 }
 
 func RegisterEchoService(r *grantedrpc.Router, svc EchoServiceHandler) {
@@ -59,7 +55,7 @@ func (c *EchoServiceClient) SayHello(ctx context.Context, req *SayHelloRequest) 
 		return nil, fmt.Errorf("failed to marshal wrapper: %w", err)
 	}
 
-	respJson, err := c.h.SendMessage(ctx, string(inputJson))
+	respJson, err := c.t.SendMessage(ctx, string(inputJson))
 	if err != nil {
 		return nil, err
 	}
